@@ -41,6 +41,11 @@ class GemImg:
         """Check if the model is a pro variant."""
         return "-pro" in self.model
 
+    @property
+    def is_gemini3(self) -> bool:
+        """Check if the model is a Gemini 3 variant."""
+        return "gemini-3" in self.model
+
     def generate(
         self,
         prompt: Optional[str] = None,
@@ -56,9 +61,14 @@ class GemImg:
         image_size: str = "2K",
         system_prompt: Optional[str] = None,
         grid: Optional[Grid] = None,
+        google_search: bool = False,
     ) -> Optional["ImageGen"]:
         if not prompt and not imgs:
             raise ValueError("Either 'prompt' or 'imgs' must be provided")
+
+        # Validate Google Search is only used with Gemini 3
+        if google_search and not self.is_gemini3:
+            raise ValueError("Google Search grounding requires Gemini 3 Pro Image")
 
         # If grid is provided, use its aspect_ratio and image_size
         if grid is not None:
@@ -82,6 +92,13 @@ class GemImg:
             # Ensure imgs is a list
             if isinstance(imgs, (str, Image.Image)):
                 imgs = [imgs]
+
+            # Validate input image count
+            max_images = 14 if self.is_gemini3 else 6
+            if len(imgs) > max_images:
+                raise ValueError(
+                    f"Maximum {max_images} input images for {self.model}"
+                )
 
             img_b64_strings = [img_to_b64(img, resize_inputs) for img in imgs]
             parts.extend([img_b64_part(b64_str) for b64_str in img_b64_strings])
@@ -108,6 +125,10 @@ class GemImg:
                 query_params["system_instruction"] = {
                     "parts": [{"text": system_prompt.strip()}]
                 }
+
+        # Add Google Search grounding for Gemini 3
+        if google_search:
+            query_params["tools"] = [{"googleSearch": {}}]
 
         headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
         api_url = f"{self.base_url}/v1beta/models/{self.model}:generateContent"

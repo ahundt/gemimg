@@ -80,6 +80,11 @@ def main():
         help="Grid dimensions as ROWSxCOLS (e.g., 2x2). Pro models only.",
     )
     parser.add_argument(
+        "--google-search",
+        action="store_true",
+        help="Enable Google Search grounding for real-time data (Gemini 3 Pro only).",
+    )
+    parser.add_argument(
         "--grid-aspect-ratio",
         default="1:1",
         help="Aspect ratio for grid cells (default: 1:1).",
@@ -146,6 +151,7 @@ def main():
         image_size=args.image_size,
         system_prompt=args.system_prompt,
         grid=grid,
+        google_search=args.google_search,
     )
 
     if result and result.images:

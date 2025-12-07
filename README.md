@@ -211,6 +211,43 @@ python -m gemimg "A kitten with prominent purple-and-green fur."
 
 Common options: `-i/--input-images`, `-o/--output-file`, `--aspect-ratio`, `--output-dir`, `-n` (number of images), `--webp`, `--store-prompt`, `-f/--force`. The API key can be provided via `--api-key` or the `GEMINI_API_KEY` environment variable.
 
+## Gemini 3 Pro Image Features
+
+Gemini 3 Pro Image (Nano Banana Pro) adds additional capabilities:
+
+### Google Search Grounding
+
+Use real-time data from Google Search to inform image generation:
+
+```py3
+from gemimg import GemImg
+
+g = GemImg(model="gemini-3-pro-image-preview")
+
+# Generate an image with current event context
+gen = g.generate(
+    "Create an infographic showing today's weather in Tokyo",
+    google_search=True
+)
+```
+
+CLI usage:
+```sh
+gemimg "Create an infographic showing today's weather in Tokyo" --model gemini-3-pro-image-preview --google-search
+```
+
+### Extended Input Image Support
+
+Gemini 3 Pro Image supports up to 14 input images (vs 6 for Flash models), enabling more complex compositions and style references.
+
+```py3
+# Combine multiple reference images
+gen = g.generate(
+    "Create a cohesive scene combining elements from all reference images",
+    imgs=["ref1.png", "ref2.png", "ref3.png", "ref4.png", "ref5.png", "ref6.png", "ref7.png"]
+)
+```
+
 ## Gemini 2.5 Flash Image Model Notes
 
 - Gemini 2.5 Flash Image cannot do style transfer, e.g. `turn me into Studio Ghibli`, and seems to ignore commands that try to do so. Google's [developer documentation example](https://ai.google.dev/gemini-api/docs/image-generation#3_style_transfer) of style transfer unintentionally demonstrates this by [incorrectly applying](https://x.com/minimaxir/status/1963431053193810129) the specified style. The only way to shift the style is to generate a completely new image in that style, which can still have mixed results if the source style is intrinsic.
