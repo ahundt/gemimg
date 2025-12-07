@@ -1,0 +1,330 @@
+"""Tests for the icons module."""
+
+import pytest
+from pathlib import Path
+from PIL import Image
+import tempfile
+import json
+
+from gemimg.icons import (
+    Platform,
+    Preset,
+    IconSpec,
+    IconType,
+    IconGenerator,
+    IconGeneratorConfig,
+    IconVariants,
+)
+from gemimg.icons.constants import (
+    PRESET_PLATFORMS,
+    IOS_ICON_SPECS,
+    MACOS_ICON_SPECS,
+    ANDROID_ICON_SPECS,
+    WINDOWS_ICO_SIZES,
+    PWA_ICON_SPECS,
+)
+from gemimg.icons.platforms import (
+    IOSProcessor,
+    MacOSProcessor,
+    AndroidProcessor,
+    WindowsProcessor,
+    PWAProcessor,
+    get_processor,
+)
+
+
+@pytest.fixture
+def sample_icon():
+    """Create a sample 1024x1024 icon image."""
+    return Image.new("RGBA", (1024, 1024), color=(255, 0, 0, 255))
+
+
+@pytest.fixture
+def temp_output_dir():
+    """Create a temporary output directory."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+class TestPlatformEnum:
+    """Tests for Platform enum."""
+
+    def test_all_platforms_defined(self):
+        """All expected platforms should be defined."""
+        assert Platform.IOS.value == "ios"
+        assert Platform.MACOS.value == "macos"
+        assert Platform.ANDROID.value == "android"
+        assert Platform.WINDOWS.value == "windows"
+        assert Platform.PWA.value == "pwa"
+
+
+class TestPresetEnum:
+    """Tests for Preset enum and mappings."""
+
+    def test_mobile_preset(self):
+        """Mobile preset should include iOS and Android."""
+        platforms = PRESET_PLATFORMS[Preset.MOBILE]
+        assert Platform.IOS in platforms
+        assert Platform.ANDROID in platforms
+        assert len(platforms) == 2
+
+    def test_desktop_preset(self):
+        """Desktop preset should include macOS and Windows."""
+        platforms = PRESET_PLATFORMS[Preset.DESKTOP]
+        assert Platform.MACOS in platforms
+        assert Platform.WINDOWS in platforms
+        assert len(platforms) == 2
+
+    def test_apple_preset(self):
+        """Apple preset should include iOS and macOS."""
+        platforms = PRESET_PLATFORMS[Preset.APPLE]
+        assert Platform.IOS in platforms
+        assert Platform.MACOS in platforms
+        assert len(platforms) == 2
+
+    def test_all_preset(self):
+        """All preset should include all 5 platforms."""
+        platforms = PRESET_PLATFORMS[Preset.ALL]
+        assert len(platforms) == 5
+        assert Platform.IOS in platforms
+        assert Platform.MACOS in platforms
+        assert Platform.ANDROID in platforms
+        assert Platform.WINDOWS in platforms
+        assert Platform.PWA in platforms
+
+
+class TestIconSpec:
+    """Tests for IconSpec dataclass."""
+
+    def test_size_property(self):
+        """Size property should return (width, height) tuple."""
+        spec = IconSpec(512, 512)
+        assert spec.size == (512, 512)
+
+    def test_scaled_size_property(self):
+        """Scaled size should account for scale factor."""
+        spec = IconSpec(256, 256, scale=2)
+        assert spec.scaled_size == (512, 512)
+
+
+class TestIOSProcessor:
+    """Tests for iOS icon processor."""
+
+    def test_process_creates_all_sizes(self, sample_icon, temp_output_dir):
+        """iOS processor should create all required icon sizes."""
+        processor = IOSProcessor(temp_output_dir)
+        result = processor.process(sample_icon)
+
+        assert len(result) == len(IOS_ICON_SPECS)
+        for filename, img in result.items():
+            assert filename.startswith("AppIcon-")
+            assert filename.endswith(".png")
+
+    def test_app_icon_removes_transparency(self, temp_output_dir):
+        """App icon mode should convert RGBA to RGB."""
+        # Create image with transparency
+        rgba_icon = Image.new("RGBA", (1024, 1024), color=(255, 0, 0, 128))
+
+        processor = IOSProcessor(temp_output_dir, icon_type=IconType.APP_ICON)
+        result = processor.process(rgba_icon)
+
+        # Check first result is RGB
+        first_img = list(result.values())[0]
+        assert first_img.mode == "RGB"
+
+    def test_menu_icon_preserves_transparency(self, temp_output_dir):
+        """Menu icon mode should preserve transparency."""
+        rgba_icon = Image.new("RGBA", (1024, 1024), color=(255, 0, 0, 128))
+
+        processor = IOSProcessor(temp_output_dir, icon_type=IconType.MENU_ICON)
+        result = processor.process(rgba_icon)
+
+        first_img = list(result.values())[0]
+        assert first_img.mode == "RGBA"
+
+
+class TestMacOSProcessor:
+    """Tests for macOS icon processor."""
+
+    def test_process_creates_all_sizes(self, sample_icon, temp_output_dir):
+        """macOS processor should create all required sizes including @2x."""
+        processor = MacOSProcessor(temp_output_dir, apply_shadow=False)
+        result = processor.process(sample_icon)
+
+        assert len(result) == len(MACOS_ICON_SPECS)
+
+        # Check for @2x variants
+        filenames = list(result.keys())
+        assert any("@2x" in f for f in filenames)
+
+
+class TestAndroidProcessor:
+    """Tests for Android icon processor."""
+
+    def test_process_creates_all_densities(self, sample_icon, temp_output_dir):
+        """Android processor should create all density variants."""
+        processor = AndroidProcessor(temp_output_dir, validate_safe_zone=False)
+        result = processor.process(sample_icon)
+
+        assert len(result) == len(ANDROID_ICON_SPECS)
+
+        # Check for density suffixes
+        filenames = list(result.keys())
+        assert any("xxxhdpi" in f for f in filenames)
+        assert any("mdpi" in f for f in filenames)
+
+    def test_tinted_variant_creates_monochrome(self, sample_icon, temp_output_dir):
+        """Tinted variant should create monochrome icon."""
+        processor = AndroidProcessor(
+            temp_output_dir, variant="tinted", validate_safe_zone=False
+        )
+        result = processor.process(sample_icon)
+
+        assert "ic_launcher_monochrome.png" in result
+
+
+class TestWindowsProcessor:
+    """Tests for Windows ICO processor."""
+
+    def test_save_creates_ico_file(self, sample_icon, temp_output_dir):
+        """Windows processor should create multi-size ICO file."""
+        processor = WindowsProcessor(temp_output_dir)
+        processed = processor.process(sample_icon)
+        saved = processor.save(processed)
+
+        assert len(saved) == 1
+        assert saved[0].suffix == ".ico"
+        assert saved[0].exists()
+
+
+class TestPWAProcessor:
+    """Tests for PWA icon processor."""
+
+    def test_process_creates_all_sizes(self, sample_icon, temp_output_dir):
+        """PWA processor should create all required sizes."""
+        processor = PWAProcessor(temp_output_dir)
+        result = processor.process(sample_icon)
+
+        assert len(result) == len(PWA_ICON_SPECS)
+
+    def test_maskable_icons_have_padding(self, sample_icon, temp_output_dir):
+        """Maskable icons should have padding applied."""
+        processor = PWAProcessor(temp_output_dir)
+        result = processor.process(sample_icon)
+
+        # Check that maskable icons exist
+        maskable_files = [f for f in result.keys() if "maskable" in f]
+        assert len(maskable_files) > 0
+
+    def test_save_creates_manifest(self, sample_icon, temp_output_dir):
+        """PWA processor should create manifest-icons.json."""
+        processor = PWAProcessor(temp_output_dir)
+        processed = processor.process(sample_icon)
+        saved = processor.save(processed)
+
+        manifest_path = temp_output_dir / "pwa" / "light" / "manifest-icons.json"
+        assert manifest_path.exists()
+
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+            assert isinstance(manifest, list)
+            assert len(manifest) > 0
+            assert all("src" in item for item in manifest)
+            assert all("sizes" in item for item in manifest)
+
+
+class TestGetProcessor:
+    """Tests for processor factory function."""
+
+    def test_returns_correct_processor_types(self, temp_output_dir):
+        """Factory should return correct processor type for each platform."""
+        assert isinstance(get_processor(Platform.IOS, temp_output_dir), IOSProcessor)
+        assert isinstance(get_processor(Platform.MACOS, temp_output_dir), MacOSProcessor)
+        assert isinstance(get_processor(Platform.ANDROID, temp_output_dir), AndroidProcessor)
+        assert isinstance(get_processor(Platform.WINDOWS, temp_output_dir), WindowsProcessor)
+        assert isinstance(get_processor(Platform.PWA, temp_output_dir), PWAProcessor)
+
+
+class TestIconVariants:
+    """Tests for IconVariants dataclass."""
+
+    def test_default_values(self):
+        """Default values should be None."""
+        variants = IconVariants()
+        assert variants.light is None
+        assert variants.dark is None
+        assert variants.tinted is None
+
+    def test_with_images(self, sample_icon):
+        """Should accept image instances."""
+        variants = IconVariants(light=sample_icon, dark=sample_icon)
+        assert variants.light is not None
+        assert variants.dark is not None
+        assert variants.tinted is None
+
+
+class TestIconGeneratorConfig:
+    """Tests for IconGeneratorConfig."""
+
+    def test_default_values(self):
+        """Config should have sensible defaults."""
+        config = IconGeneratorConfig()
+        assert config.icon_type == IconType.APP_ICON
+        assert len(config.platforms) == 5  # ALL preset
+        assert config.themed is False
+        assert config.macos_shadow is True
+        assert config.validate_safe_zone is True
+
+    def test_custom_values(self):
+        """Config should accept custom values."""
+        config = IconGeneratorConfig(
+            icon_type=IconType.MENU_ICON,
+            platforms={Platform.IOS, Platform.ANDROID},
+            themed=True,
+        )
+        assert config.icon_type == IconType.MENU_ICON
+        assert len(config.platforms) == 2
+        assert config.themed is True
+
+
+class TestIconGenerator:
+    """Tests for IconGenerator orchestration."""
+
+    def test_generate_with_single_input(self, sample_icon, temp_output_dir):
+        """Should use single input as light variant."""
+        # Save sample icon to temp file
+        input_path = temp_output_dir / "input.png"
+        sample_icon.save(str(input_path))
+
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        result = generator.generate(
+            input_images=[input_path],
+        )
+
+        assert result.api_calls == 0  # No generation needed
+        assert result.variants.light is not None
+        assert "ios/light" in result.output_paths
+
+    def test_generate_requires_prompt_for_generation(self, temp_output_dir):
+        """Should raise error if generation needed but no prompt."""
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        with pytest.raises(ValueError, match="Prompt is required"):
+            generator.generate()
+
+    def test_from_preset(self):
+        """Should create generator from preset."""
+        generator = IconGenerator.from_preset(Preset.MOBILE)
+
+        assert Platform.IOS in generator.config.platforms
+        assert Platform.ANDROID in generator.config.platforms
+        assert len(generator.config.platforms) == 2
