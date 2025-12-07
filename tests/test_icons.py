@@ -262,6 +262,23 @@ class TestIconVariants:
         assert variants.dark is not None
         assert variants.tinted is None
 
+    def test_has_any_variant_true(self, sample_icon):
+        """Should return True when at least one variant exists."""
+        variants = IconVariants(light=sample_icon)
+        assert variants.has_any_variant() is True
+
+    def test_has_any_variant_false(self):
+        """Should return False when no variants exist."""
+        variants = IconVariants()
+        assert variants.has_any_variant() is False
+
+    def test_count_variants(self, sample_icon):
+        """Should count non-None variants correctly."""
+        assert IconVariants().count() == 0
+        assert IconVariants(light=sample_icon).count() == 1
+        assert IconVariants(light=sample_icon, dark=sample_icon).count() == 2
+        assert IconVariants(light=sample_icon, dark=sample_icon, tinted=sample_icon).count() == 3
+
 
 class TestIconGeneratorConfig:
     """Tests for IconGeneratorConfig."""
@@ -285,6 +302,41 @@ class TestIconGeneratorConfig:
         assert config.icon_type == IconType.MENU_ICON
         assert len(config.platforms) == 2
         assert config.themed is True
+
+    def test_raises_on_empty_platforms(self):
+        """Should raise ValueError when platforms is empty."""
+        with pytest.raises(ValueError, match="At least one platform must be specified"):
+            IconGeneratorConfig(platforms=set())
+
+
+class TestIconType:
+    """Tests for IconType enum properties."""
+
+    def test_app_icon_requires_opaque_background(self):
+        """APP_ICON should require opaque background."""
+        assert IconType.APP_ICON.requires_opaque_background is True
+        assert IconType.APP_ICON.allows_transparency is False
+
+    def test_menu_icon_allows_transparency(self):
+        """MENU_ICON should allow transparency."""
+        assert IconType.MENU_ICON.requires_opaque_background is False
+        assert IconType.MENU_ICON.allows_transparency is True
+
+    def test_favicon_allows_transparency(self):
+        """FAVICON should allow transparency."""
+        assert IconType.FAVICON.requires_opaque_background is False
+        assert IconType.FAVICON.allows_transparency is True
+
+
+class TestVariantEnum:
+    """Tests for Variant enum."""
+
+    def test_all_variants_defined(self):
+        """All expected variants should be defined."""
+        from gemimg.icons import Variant
+        assert Variant.LIGHT.value == "light"
+        assert Variant.DARK.value == "dark"
+        assert Variant.TINTED.value == "tinted"
 
 
 class TestIconGenerator:
@@ -328,3 +380,36 @@ class TestIconGenerator:
         assert Platform.IOS in generator.config.platforms
         assert Platform.ANDROID in generator.config.platforms
         assert len(generator.config.platforms) == 2
+
+    def test_generate_raises_on_nonexistent_input_file(self, temp_output_dir):
+        """Should raise FileNotFoundError for non-existent input files."""
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        with pytest.raises(FileNotFoundError, match="Image file not found"):
+            generator.generate(input_images=[Path("/nonexistent/image.png")])
+
+    def test_generate_raises_on_nonexistent_variant_file(self, temp_output_dir):
+        """Should raise FileNotFoundError for non-existent variant files."""
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        with pytest.raises(FileNotFoundError, match="Image file not found"):
+            generator.generate(light=Path("/nonexistent/light.png"))
+
+    def test_generate_requires_gemimg_for_generation(self, temp_output_dir):
+        """Should raise ValueError when GemImg needed but not provided."""
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        with pytest.raises(ValueError, match="GemImg instance is required"):
+            generator.generate(prompt="test icon")

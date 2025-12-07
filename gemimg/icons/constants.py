@@ -31,6 +31,24 @@ class IconType(Enum):
     MENU_ICON = "menu-icon"  # In-app icons, transparency allowed
     FAVICON = "favicon"  # Website favicons
 
+    @property
+    def allows_transparency(self) -> bool:
+        """Check if this icon type allows transparent backgrounds."""
+        return self != IconType.APP_ICON
+
+    @property
+    def requires_opaque_background(self) -> bool:
+        """Check if this icon type requires an opaque background."""
+        return self == IconType.APP_ICON
+
+
+class Variant(Enum):
+    """Icon theme variants for themed icon support."""
+
+    LIGHT = "light"
+    DARK = "dark"
+    TINTED = "tinted"
+
 
 PRESET_PLATFORMS: Dict[Preset, List[Platform]] = {
     Preset.MOBILE: [Platform.IOS, Platform.ANDROID],
@@ -38,6 +56,17 @@ PRESET_PLATFORMS: Dict[Preset, List[Platform]] = {
     Preset.APPLE: [Platform.IOS, Platform.MACOS],
     Preset.ALL: [Platform.IOS, Platform.MACOS, Platform.ANDROID, Platform.WINDOWS, Platform.PWA],
 }
+
+# Validate that PRESET_PLATFORMS[Preset.ALL] contains all Platform values
+# This check runs at module import time to catch configuration errors early
+_all_platforms = set(PRESET_PLATFORMS[Preset.ALL])
+_defined_platforms = set(Platform)
+if _all_platforms != _defined_platforms:
+    _missing = _defined_platforms - _all_platforms
+    raise ValueError(
+        f"PRESET_PLATFORMS[Preset.ALL] is missing platforms: {_missing}. "
+        "All Platform enum values must be included in the ALL preset."
+    )
 
 
 @dataclass

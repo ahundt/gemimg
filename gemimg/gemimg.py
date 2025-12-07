@@ -137,21 +137,48 @@ class GemImg:
             response = self.client.post(
                 api_url, json=query_params, headers=headers, timeout=180
             )
+            response.raise_for_status()
         except httpx.TimeoutException:
-            logger.error("Request Timeout")
+            logger.error(
+                "Request timed out after 180 seconds. "
+                "The API may be experiencing high load. Please try again."
+            )
             return None
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred: {e}")
+            status_code = e.response.status_code
+            if status_code == 401:
+                logger.error("Authentication failed. Check your GEMINI_API_KEY.")
+            elif status_code == 403:
+                logger.error("Access forbidden. Check API quota or region restrictions.")
+            elif status_code == 429:
+                logger.error("Rate limit exceeded. Please wait before retrying.")
+            elif status_code >= 500:
+                logger.error(f"Server error ({status_code}). Please try again later.")
+            else:
+                logger.error(f"HTTP error {status_code}: {e.response.text[:200]}")
             return None
 
-        response_data = response.json()
+        try:
+            response_data = response.json()
+        except ValueError as e:
+            logger.error(f"API returned invalid JSON response: {e}")
+            return None
+
         if err := response_data.get("error"):
-            logger.error(f"API Response Error: {err['code']} — {err['message']}")
+            logger.error(f"API Response Error: {err.get('code', 'unknown')} — {err.get('message', 'unknown error')}")
             return None
 
+        # Defensive parsing with clear error messages
+        if "usageMetadata" not in response_data:
+            logger.error("API response missing 'usageMetadata' field.")
+            return None
         usage_metadata = response_data["usageMetadata"]
-        # Check for prohibited content
+
+        if "candidates" not in response_data or not response_data["candidates"]:
+            logger.error("API response missing 'candidates' field.")
+            return None
         candidates = response_data["candidates"][0]
+
         finish_reason = candidates.get("finishReason")
         if finish_reason in ["PROHIBITED_CONTENT", "NO_IMAGE"]:
             logger.error(f"Image was not generated due to {finish_reason}.")
@@ -161,7 +188,7 @@ class GemImg:
             logger.error("No image is present in the response.")
             return None
 
-        response_parts = candidates["content"]["parts"]
+        response_parts = candidates["content"].get("parts", [])
 
         output_images = [
             b64_to_img(part["inlineData"]["data"])
@@ -213,16 +240,36 @@ class GemImg:
             subimage_paths=output_subimage_paths,
         )
 
-    def _generate_multiple(self, n: int, **kwargs) -> "ImageGen":
-        """Helper to generate multiple images by accumulating results."""
-        n = kwargs.pop("n")
+    def _generate_multiple(self, n: int, **kwargs) -> Optional["ImageGen"]:
+        """Helper to generate multiple images by accumulating results.
+
+        Handles partial failures gracefully - if some API calls fail,
+        returns successful results. Only returns None if all calls fail.
+        """
+        # Remove 'n' from kwargs if present to avoid duplication
+        kwargs.pop("n", None)
+
         result = None
-        for _ in range(n):
+        failed_count = 0
+
+        for i in range(n):
             gen_result = self.generate(n=1, **kwargs)
+            if gen_result is None:
+                failed_count += 1
+                logger.warning(f"Image generation {i + 1}/{n} failed.")
+                continue
+
             if result is None:
                 result = gen_result
             else:
                 result += gen_result
+
+        if failed_count > 0 and result is not None:
+            logger.warning(
+                f"Generated {n - failed_count}/{n} images. "
+                f"{failed_count} generation(s) failed."
+            )
+
         return result
 
 

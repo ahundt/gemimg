@@ -238,16 +238,19 @@ class AndroidProcessor(PlatformProcessor):
         safe_margin = int(width * (1 - ANDROID_SAFE_ZONE_PERCENT) / 2)
 
         # Check if there are non-transparent pixels near the edges
+        # A pixel is outside safe zone if it's near ANY edge (left, right, top, or bottom)
         pixels = img.load()
         edge_content = False
 
         for x in range(width):
             for y in range(height):
-                if x < safe_margin or x >= width - safe_margin:
-                    if y < safe_margin or y >= height - safe_margin:
-                        if pixels[x, y][3] > 128:  # Non-transparent
-                            edge_content = True
-                            break
+                # Check if pixel is outside safe zone on ANY axis (OR, not AND)
+                is_outside_horizontal = x < safe_margin or x >= width - safe_margin
+                is_outside_vertical = y < safe_margin or y >= height - safe_margin
+                if is_outside_horizontal or is_outside_vertical:
+                    if pixels[x, y][3] > 128:  # Non-transparent
+                        edge_content = True
+                        break
             if edge_content:
                 break
 

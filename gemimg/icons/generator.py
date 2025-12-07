@@ -22,6 +22,29 @@ from .platforms import get_processor
 logger = logging.getLogger(__name__)
 
 
+def _load_image(path: Path) -> Image.Image:
+    """Load image using context manager and return a copy to release file handle.
+
+    This follows RAII pattern - the file is opened, copied, and closed immediately.
+    The returned image is independent of the file handle.
+
+    Args:
+        path: Path to the image file
+
+    Returns:
+        A copy of the loaded image
+
+    Raises:
+        FileNotFoundError: If the image file does not exist
+        PIL.UnidentifiedImageError: If the file is not a valid image
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"Image file not found: {path}")
+
+    with Image.open(path) as img:
+        return img.copy()
+
+
 @dataclass
 class IconVariants:
     """Container for all icon variants."""
@@ -29,6 +52,14 @@ class IconVariants:
     light: Optional[Image.Image] = None
     dark: Optional[Image.Image] = None
     tinted: Optional[Image.Image] = None
+
+    def has_any_variant(self) -> bool:
+        """Check if at least one variant is present."""
+        return any([self.light, self.dark, self.tinted])
+
+    def count(self) -> int:
+        """Return the number of non-None variants."""
+        return sum(1 for v in [self.light, self.dark, self.tinted] if v is not None)
 
 
 @dataclass
@@ -38,6 +69,11 @@ class IconGenerationResult:
     variants: IconVariants
     output_paths: Dict[str, List[Path]] = field(default_factory=dict)
     api_calls: int = 0
+
+    def __post_init__(self):
+        """Validate result fields."""
+        if self.api_calls < 0:
+            raise ValueError("api_calls cannot be negative")
 
 
 @dataclass
@@ -50,6 +86,11 @@ class IconGeneratorConfig:
     macos_shadow: bool = True
     validate_safe_zone: bool = True
     output_dir: Path = field(default_factory=lambda: Path("icons"))
+
+    def __post_init__(self):
+        """Validate configuration fields."""
+        if not self.platforms:
+            raise ValueError("At least one platform must be specified")
 
 
 class IconGenerator:
@@ -117,29 +158,30 @@ class IconGenerator:
         input_images = input_images or []
 
         # 1. Resolve explicit variant files (highest priority)
+        # Using _load_image() for RAII pattern - files are closed after copying
         variants = IconVariants(
-            light=Image.open(light) if light else None,
-            dark=Image.open(dark) if dark else None,
-            tinted=Image.open(tinted) if tinted else None,
+            light=_load_image(light) if light else None,
+            dark=_load_image(dark) if dark else None,
+            tinted=_load_image(tinted) if tinted else None,
         )
 
         # 2. Handle input images based on count
         if len(input_images) == 1 and not variants.light:
             # Single input = light variant (unless used as reference)
-            variants.light = Image.open(input_images[0])
+            variants.light = _load_image(input_images[0])
 
         elif len(input_images) == 2 and not (variants.dark or variants.tinted):
             # Two inputs = light + dark
             if not variants.light:
-                variants.light = Image.open(input_images[0])
-            variants.dark = Image.open(input_images[1])
+                variants.light = _load_image(input_images[0])
+            variants.dark = _load_image(input_images[1])
 
         elif len(input_images) == 3 and not (variants.dark or variants.tinted):
             # Three inputs = light + dark + tinted
             if not variants.light:
-                variants.light = Image.open(input_images[0])
-            variants.dark = Image.open(input_images[1])
-            variants.tinted = Image.open(input_images[2])
+                variants.light = _load_image(input_images[0])
+            variants.dark = _load_image(input_images[1])
+            variants.tinted = _load_image(input_images[2])
 
         # 3. Determine what needs to be generated
         needs_light = variants.light is None
@@ -149,9 +191,9 @@ class IconGenerator:
         # 4. Reference images for style consistency (4+ inputs, or inputs not used as variants)
         reference_images: List[Image.Image] = []
         if len(input_images) >= 4:
-            reference_images = [Image.open(p) for p in input_images]
+            reference_images = [_load_image(p) for p in input_images]
         elif len(input_images) > 0 and not needs_light:
-            reference_images = [Image.open(p) for p in input_images]
+            reference_images = [_load_image(p) for p in input_images]
 
         # 5. Generate missing variants (single API call)
         if needs_light or needs_dark or needs_tinted:

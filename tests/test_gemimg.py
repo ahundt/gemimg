@@ -213,3 +213,162 @@ class TestIsProProperty:
         """Should return False for flash models."""
         gem = GemImg(api_key=api_key, model="gemini-2.5-flash-image")
         assert gem.is_pro is False
+
+
+class TestErrorHandling:
+    """Tests for error handling and edge cases."""
+
+    def test_generate_returns_none_on_timeout(self, api_key):
+        """Should return None when API request times out."""
+        import httpx
+
+        gem = GemImg(api_key=api_key)
+        with patch.object(gem, "client") as mock_client:
+            mock_client.post.side_effect = httpx.TimeoutException("Request timed out")
+            result = gem.generate(prompt="test")
+            assert result is None
+
+    def test_generate_returns_none_on_http_error(self, api_key):
+        """Should return None when API returns HTTP error status."""
+        import httpx
+
+        gem = GemImg(api_key=api_key)
+        with patch.object(gem, "client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Server Error",
+                request=MagicMock(),
+                response=MagicMock(status_code=500, text="Internal Server Error"),
+            )
+            mock_client.post.return_value = mock_response
+            result = gem.generate(prompt="test")
+            assert result is None
+
+    def test_generate_returns_none_on_api_error_response(self, api_key):
+        """Should return None and log error when API returns error object."""
+        gem = GemImg(api_key=api_key)
+        with patch.object(gem, "client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = {
+                "error": {"code": 429, "message": "Rate limit exceeded"}
+            }
+            mock_client.post.return_value = mock_response
+            result = gem.generate(prompt="test")
+            assert result is None
+
+    def test_generate_returns_none_on_prohibited_content(self, api_key):
+        """Should return None when API returns PROHIBITED_CONTENT."""
+        gem = GemImg(api_key=api_key)
+        with patch.object(gem, "client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = {
+                "responseId": "test",
+                "candidates": [{"finishReason": "PROHIBITED_CONTENT"}],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 0},
+            }
+            mock_client.post.return_value = mock_response
+            result = gem.generate(prompt="test")
+            assert result is None
+
+    def test_generate_returns_none_on_malformed_response(self, api_key):
+        """Should return None when API response is missing expected fields."""
+        gem = GemImg(api_key=api_key)
+        with patch.object(gem, "client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.return_value = None
+            # Missing 'candidates' key
+            mock_response.json.return_value = {
+                "responseId": "test",
+                "usageMetadata": {"promptTokenCount": 10},
+            }
+            mock_client.post.return_value = mock_response
+            result = gem.generate(prompt="test")
+            assert result is None
+
+    def test_generate_raises_without_prompt_or_imgs(self, api_key):
+        """Should raise ValueError when neither prompt nor imgs provided."""
+        gem = GemImg(api_key=api_key)
+        with pytest.raises(ValueError, match=r"Either 'prompt' or 'imgs' must be provided"):
+            gem.generate()
+
+
+class TestGenerateMultiple:
+    """Tests for multiple image generation."""
+
+    def test_generate_multiple_accumulates_results(self, api_key):
+        """Generating n>1 images should accumulate all results."""
+        gem = GemImg(api_key=api_key)
+        valid_b64 = create_valid_b64_image()
+
+        with patch.object(gem, "client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = {
+                "responseId": "test",
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {"inlineData": {"mimeType": "image/png", "data": valid_b64}}
+                            ]
+                        },
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20},
+            }
+            mock_client.post.return_value = mock_response
+
+            result = gem.generate(prompt="test", n=3, temperature=1.0)
+
+            assert result is not None
+            assert len(result.images) == 3
+            assert len(result.usages) == 3
+            assert mock_client.post.call_count == 3
+
+    def test_generate_multiple_handles_partial_failure(self, api_key):
+        """Should handle partial failures gracefully when some API calls fail."""
+        gem = GemImg(api_key=api_key)
+        valid_b64 = create_valid_b64_image()
+
+        call_count = [0]
+
+        def mock_post(*args, **kwargs):
+            call_count[0] += 1
+            mock_response = MagicMock()
+            mock_response.raise_for_status.return_value = None
+            if call_count[0] == 2:
+                # Second call fails
+                mock_response.json.return_value = {
+                    "error": {"code": 500, "message": "Internal error"}
+                }
+            else:
+                mock_response.json.return_value = {
+                    "responseId": "test",
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {"inlineData": {"mimeType": "image/png", "data": valid_b64}}
+                                ]
+                            },
+                            "finishReason": "STOP",
+                        }
+                    ],
+                    "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20},
+                }
+            return mock_response
+
+        with patch.object(gem, "client") as mock_client:
+            mock_client.post.side_effect = mock_post
+
+            # Should not crash, should return partial results
+            result = gem.generate(prompt="test", n=3, temperature=1.0)
+
+            # Either returns partial results or None, but should not crash
+            assert mock_client.post.call_count == 3
+            if result is not None:
+                # Partial success: got some images
+                assert len(result.images) >= 1
