@@ -179,35 +179,16 @@ class IconGenerator:
             tinted=_load_image(tinted) if tinted else None,
         )
 
-        # 2. Handle input images based on count
-        if len(input_images) == 1 and not variants.light:
-            # Single input = light variant (unless used as reference)
-            variants.light = _load_image(input_images[0])
-
-        elif len(input_images) == 2 and not (variants.dark or variants.tinted):
-            # Two inputs = light + dark
-            if not variants.light:
-                variants.light = _load_image(input_images[0])
-            variants.dark = _load_image(input_images[1])
-
-        elif len(input_images) == 3 and not (variants.dark or variants.tinted):
-            # Three inputs = light + dark + tinted
-            if not variants.light:
-                variants.light = _load_image(input_images[0])
-            variants.dark = _load_image(input_images[1])
-            variants.tinted = _load_image(input_images[2])
+        # 2. Load style references (input_images are ONLY references, not variants)
+        # Use --light/--dark/--tinted for explicit variant files
+        reference_images: List[Image.Image] = [
+            _load_image(p) for p in input_images
+        ]
 
         # 3. Determine what needs to be generated
         needs_light = variants.light is None
         needs_dark = themed and variants.dark is None
         needs_tinted = themed and variants.tinted is None
-
-        # 4. Reference images for style consistency (4+ inputs, or inputs not used as variants)
-        reference_images: List[Image.Image] = []
-        if len(input_images) >= 4:
-            reference_images = [_load_image(p) for p in input_images]
-        elif len(input_images) > 0 and not needs_light:
-            reference_images = [_load_image(p) for p in input_images]
 
         # 5. Generate missing variants (single API call)
         if needs_light or needs_dark or needs_tinted:

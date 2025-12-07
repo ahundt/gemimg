@@ -371,11 +371,11 @@ class TestVariantEnum:
 class TestIconGenerator:
     """Tests for IconGenerator orchestration."""
 
-    def test_generate_with_single_input(self, sample_icon, temp_output_dir):
-        """Should use single input as light variant."""
+    def test_explicit_light_skips_generation(self, sample_icon, temp_output_dir):
+        """Providing --light should use that image, not generate."""
         # Save sample icon to temp file
-        input_path = temp_output_dir / "input.png"
-        sample_icon.save(str(input_path))
+        light_path = temp_output_dir / "light.png"
+        sample_icon.save(str(light_path))
 
         config = IconGeneratorConfig(
             platforms={Platform.IOS},
@@ -384,12 +384,28 @@ class TestIconGenerator:
         generator = IconGenerator(gemimg=None, config=config)
 
         result = generator.generate(
-            input_images=[input_path],
+            light=light_path,
         )
 
         assert result.api_calls == 0  # No generation needed
         assert result.variants.light is not None
         assert "ios/light" in result.output_paths
+
+    def test_input_images_are_style_references(self, sample_icon, temp_output_dir):
+        """Input images should be style references, requiring a prompt."""
+        # Save sample icon to temp file
+        ref_path = temp_output_dir / "ref.png"
+        sample_icon.save(str(ref_path))
+
+        config = IconGeneratorConfig(
+            platforms={Platform.IOS},
+            output_dir=temp_output_dir / "output",
+        )
+        generator = IconGenerator(gemimg=None, config=config)
+
+        # Should require prompt since input_images are references, not variants
+        with pytest.raises(ValueError, match="Prompt is required"):
+            generator.generate(input_images=[ref_path])
 
     def test_generate_requires_prompt_for_generation(self, temp_output_dir):
         """Should raise error if generation needed but no prompt."""

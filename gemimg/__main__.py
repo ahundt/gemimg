@@ -320,11 +320,8 @@ Model Capabilities:
             type=existing_file,
             default=[],
             metavar="FILE",
-            help="Input image file(s). Interpretation by count: "
-                 "1 file → light variant; "
-                 "2 files → light, dark; "
-                 "3 files → light, dark, tinted; "
-                 "4+ files → first 3 as variants, rest as style references.",
+            help="Style reference images for AI generation. "
+                 "Use --light/--dark/--tinted to provide pre-made variants.",
         )
         io_group.add_argument(
             "-o",
@@ -468,7 +465,7 @@ Model Capabilities:
             type=existing_file,
             default=[],
             metavar="FILE",
-            help="Input images for transformation or style reference.",
+            help="Style reference images for AI generation context.",
         )
         io_group.add_argument(
             "-o",
