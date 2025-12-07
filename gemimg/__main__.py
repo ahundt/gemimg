@@ -334,7 +334,7 @@ Model Capabilities:
         # Explicit variant files group
         variant_group = parser.add_argument_group(
             "Explicit Variants",
-            "Provide pre-made icon variants (overrides --input-images interpretation)."
+            "Provide pre-made icon variants (skips AI generation for that variant)."
         )
         variant_group.add_argument(
             "--light",

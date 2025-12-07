@@ -126,6 +126,18 @@ class GemImg:
                 query_params["system_instruction"] = {
                     "parts": [{"text": system_prompt.strip()}]
                 }
+        else:
+            # Warn about Pro-only options that will be ignored
+            if system_prompt:
+                logger.warning(
+                    f"system_prompt is ignored for {self.model}. "
+                    "Use a Pro model (e.g., gemini-3-pro-image-preview) for custom prompts."
+                )
+            if image_size and image_size != "2K":
+                logger.warning(
+                    f"image_size '{image_size}' is ignored for {self.model}. "
+                    "Use a Pro model for 1K/4K resolution control."
+                )
 
         # Add Google Search grounding for Gemini 3
         if google_search:

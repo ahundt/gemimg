@@ -372,3 +372,81 @@ class TestGenerateMultiple:
             if result is not None:
                 # Partial success: got some images
                 assert len(result.images) >= 1
+
+
+class TestProOnlyOptionWarnings:
+    """Tests for warnings when Pro-only options are used with non-Pro models."""
+
+    def test_warns_when_system_prompt_used_with_flash(self, api_key, caplog):
+        """Should warn when system_prompt is used with Flash model."""
+        import logging
+
+        gem = GemImg(api_key=api_key, model="gemini-2.5-flash-image")
+
+        with patch.object(gem, "client") as mock_client:
+            # Mock a failed response to avoid full execution
+            mock_client.post.side_effect = Exception("Test")
+
+            with caplog.at_level(logging.WARNING):
+                try:
+                    gem.generate(prompt="test", system_prompt="custom style")
+                except Exception:
+                    pass
+
+            assert any("system_prompt" in record.message.lower() for record in caplog.records)
+            assert any("pro" in record.message.lower() for record in caplog.records)
+
+    def test_warns_when_image_size_non_default_with_flash(self, api_key, caplog):
+        """Should warn when image_size differs from default with Flash model."""
+        import logging
+
+        gem = GemImg(api_key=api_key, model="gemini-2.5-flash-image")
+
+        with patch.object(gem, "client") as mock_client:
+            mock_client.post.side_effect = Exception("Test")
+
+            with caplog.at_level(logging.WARNING):
+                try:
+                    gem.generate(prompt="test", image_size="4K")
+                except Exception:
+                    pass
+
+            assert any("image_size" in record.message.lower() for record in caplog.records)
+            assert any("pro" in record.message.lower() for record in caplog.records)
+
+    def test_no_warning_when_image_size_default_with_flash(self, api_key, caplog):
+        """Should NOT warn when image_size is default 2K with Flash model."""
+        import logging
+
+        gem = GemImg(api_key=api_key, model="gemini-2.5-flash-image")
+
+        with patch.object(gem, "client") as mock_client:
+            mock_client.post.side_effect = Exception("Test")
+
+            with caplog.at_level(logging.WARNING):
+                try:
+                    gem.generate(prompt="test", image_size="2K")
+                except Exception:
+                    pass
+
+            # Should not have image_size warning for default value
+            assert not any("image_size" in record.message.lower() for record in caplog.records)
+
+    def test_no_warning_with_pro_model(self, api_key, caplog):
+        """Should NOT warn when Pro-only options are used with Pro model."""
+        import logging
+
+        gem = GemImg(api_key=api_key, model="gemini-3-pro-image-preview")
+
+        with patch.object(gem, "client") as mock_client:
+            mock_client.post.side_effect = Exception("Test")
+
+            with caplog.at_level(logging.WARNING):
+                try:
+                    gem.generate(prompt="test", system_prompt="style", image_size="4K")
+                except Exception:
+                    pass
+
+            # Should not have any Pro-only option warnings
+            warning_messages = [r.message.lower() for r in caplog.records if r.levelno >= logging.WARNING]
+            assert not any("ignored" in msg for msg in warning_messages)
