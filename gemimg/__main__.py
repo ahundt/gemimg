@@ -147,7 +147,7 @@ def icons_command(args: argparse.Namespace) -> None:
     else:
         icon_type = IconType.APP_ICON
 
-    # Create config
+    # Create config with all overridable parameters
     config = IconGeneratorConfig(
         icon_type=icon_type,
         platforms=platforms,
@@ -155,6 +155,9 @@ def icons_command(args: argparse.Namespace) -> None:
         macos_shadow=not args.no_shadow,
         validate_safe_zone=not args.no_safe_zone_check,
         output_dir=Path(args.output_dir),
+        image_size=args.image_size,
+        temperature=args.temperature,
+        system_prompt=args.system_prompt,
     )
 
     # Create GemImg instance if needed
@@ -194,41 +197,64 @@ def main():
         # Icons subcommand
         parser = argparse.ArgumentParser(
             prog="gemimg icons",
-            description="Generate app icons for multiple platforms.",
+            description="""Generate production-ready app icons for iOS, macOS, Android, Windows, and PWA.
+
+Examples:
+  gemimg icons "a friendly robot mascot"              # Generate from prompt
+  gemimg icons -i logo.png                            # Process existing image
+  gemimg icons "gaming app" --platforms ios android   # Specific platforms
+  gemimg icons -i icon.png --themed                   # Generate all 3 variants
+  gemimg icons "tech startup" --image-size 2K         # Higher resolution
+
+The icons subcommand handles all platform-specific requirements:
+  - iOS: App Store sizes (1024px down to 20px)
+  - macOS: ICNS format with optional drop shadow
+  - Android: Adaptive icons with safe zone validation
+  - Windows: Multi-size ICO file
+  - PWA: Manifest with regular and maskable icons""",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
         )
 
         parser.add_argument(
             "prompt",
             nargs="?",
             default=None,
-            help="Text prompt for icon generation.",
+            help="Text description of the icon to generate (e.g., 'a minimalist coffee cup').",
         )
         parser.add_argument(
             "-i",
             "--input-images",
             nargs="+",
             default=[],
-            help="Input images (0=prompt only, 1=light, 2-3=variants, 4+=style refs).",
+            help="""Input image(s) for processing or style reference:
+  1 image  → Used as light variant
+  2 images → light + dark variants
+  3 images → light + dark + tinted variants
+  4+ images → All used as style references for generation""",
         )
         parser.add_argument(
             "--light",
             default=None,
-            help="Explicit light variant file.",
+            metavar="FILE",
+            help="Explicit path to light mode icon variant.",
         )
         parser.add_argument(
             "--dark",
             default=None,
-            help="Explicit dark variant file.",
+            metavar="FILE",
+            help="Explicit path to dark mode icon variant.",
         )
         parser.add_argument(
             "--tinted",
             default=None,
-            help="Explicit tinted/monochrome variant file.",
+            metavar="FILE",
+            help="Explicit path to tinted/monochrome variant (for Android themed icons).",
         )
         parser.add_argument(
             "-o",
             "--output-dir",
             default="icons",
+            metavar="DIR",
             help="Output directory for generated icons (default: icons/).",
         )
 
@@ -284,11 +310,32 @@ def main():
             help="Skip Android safe zone validation.",
         )
 
-        # Gemini 3 Pro options
+        # Generation options (Pro models only for some features)
+        parser.add_argument(
+            "--image-size",
+            default="1K",
+            choices=["1K", "2K", "4K"],
+            help="Generated icon resolution (Pro models only). Default: 1K. Higher = more detail.",
+        )
+        parser.add_argument(
+            "--system-prompt",
+            default=None,
+            metavar="TEXT",
+            help="Custom system prompt to override built-in icon prompts (Pro models only).",
+        )
+        parser.add_argument(
+            "--temperature",
+            type=float,
+            default=1.0,
+            metavar="FLOAT",
+            help="Generation randomness 0.0-2.0 (default: 1.0). Lower = more consistent output.",
+        )
+
+        # Gemini 3 specific options
         parser.add_argument(
             "--google-search",
             action="store_true",
-            help="Enable Google Search grounding for real-time data (Gemini 3 Pro only).",
+            help="Enable Google Search grounding (Gemini 3 models only). Useful for current events/brands.",
         )
 
         add_common_args(parser)

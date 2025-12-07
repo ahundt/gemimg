@@ -308,6 +308,35 @@ class TestIconGeneratorConfig:
         with pytest.raises(ValueError, match="At least one platform must be specified"):
             IconGeneratorConfig(platforms=set())
 
+    def test_image_size_validation(self):
+        """Should validate image_size is 1K, 2K, or 4K."""
+        # Valid sizes should work
+        assert IconGeneratorConfig(image_size="1K").image_size == "1K"
+        assert IconGeneratorConfig(image_size="2K").image_size == "2K"
+        assert IconGeneratorConfig(image_size="4K").image_size == "4K"
+
+        # Invalid sizes should raise
+        with pytest.raises(ValueError, match="image_size must be"):
+            IconGeneratorConfig(image_size="invalid")
+
+    def test_temperature_validation(self):
+        """Should validate temperature is between 0.0 and 2.0."""
+        # Valid temperatures should work
+        assert IconGeneratorConfig(temperature=0.0).temperature == 0.0
+        assert IconGeneratorConfig(temperature=1.0).temperature == 1.0
+        assert IconGeneratorConfig(temperature=2.0).temperature == 2.0
+
+        # Invalid temperatures should raise
+        with pytest.raises(ValueError, match="temperature must be between"):
+            IconGeneratorConfig(temperature=-0.1)
+        with pytest.raises(ValueError, match="temperature must be between"):
+            IconGeneratorConfig(temperature=2.1)
+
+    def test_system_prompt_override(self):
+        """Should accept custom system prompt."""
+        config = IconGeneratorConfig(system_prompt="Custom prompt for icons")
+        assert config.system_prompt == "Custom prompt for icons"
+
 
 class TestIconType:
     """Tests for IconType enum properties."""

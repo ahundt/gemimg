@@ -78,7 +78,13 @@ class IconGenerationResult:
 
 @dataclass
 class IconGeneratorConfig:
-    """Configuration for icon generation."""
+    """Configuration for icon generation.
+
+    All generation parameters can be overridden from defaults:
+    - image_size: Resolution of generated icons (1K, 2K, 4K)
+    - temperature: Generation randomness (0.0-2.0)
+    - system_prompt: Custom prompt to override built-in icon prompts
+    """
 
     icon_type: IconType = IconType.APP_ICON
     platforms: Set[Platform] = field(default_factory=lambda: set(PRESET_PLATFORMS[Preset.ALL]))
@@ -86,11 +92,19 @@ class IconGeneratorConfig:
     macos_shadow: bool = True
     validate_safe_zone: bool = True
     output_dir: Path = field(default_factory=lambda: Path("icons"))
+    # Generation parameters (overridable)
+    image_size: str = "1K"
+    temperature: float = 1.0
+    system_prompt: Optional[str] = None
 
     def __post_init__(self):
         """Validate configuration fields."""
         if not self.platforms:
             raise ValueError("At least one platform must be specified")
+        if self.image_size not in ("1K", "2K", "4K"):
+            raise ValueError(f"image_size must be '1K', '2K', or '4K', got '{self.image_size}'")
+        if not 0.0 <= self.temperature <= 2.0:
+            raise ValueError(f"temperature must be between 0.0 and 2.0, got {self.temperature}")
 
 
 class IconGenerator:
@@ -208,12 +222,16 @@ class IconGenerator:
                 icon_type, prompt, needs_light, needs_dark, needs_tinted
             )
 
+            # Use system_prompt override if provided, otherwise use built prompt
+            final_prompt = self.config.system_prompt or gen_prompt
+
             result = self.gemimg.generate(
-                prompt=gen_prompt,
+                prompt=final_prompt,
                 imgs=reference_images if reference_images else None,
                 n=n_outputs,
-                aspect_ratio="1:1",
-                image_size="1K",
+                aspect_ratio="1:1",  # Icons are always square
+                image_size=self.config.image_size,
+                temperature=self.config.temperature,
                 save=False,
                 google_search=google_search,
             )
