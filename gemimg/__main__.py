@@ -7,21 +7,81 @@ from .gemimg import GemImg
 from .grid import Grid
 from .utils import save_image
 
+# Model names for help text
+MODELS = {
+    "flash": "gemini-2.5-flash-image",
+    "pro": "gemini-2.5-pro-image",
+    "gemini3-flash": "gemini-3.0-flash-image",
+    "gemini3-pro": "gemini-3.0-pro-image",
+}
+DEFAULT_MODEL = MODELS["flash"]
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add common arguments shared between commands."""
-    parser.add_argument(
+
+def add_api_args(parser: argparse.ArgumentParser) -> None:
+    """Add API connection arguments."""
+    group = parser.add_argument_group(
+        "API Connection",
+        "Authentication and endpoint configuration."
+    )
+    group.add_argument(
         "--api-key",
         default=os.getenv("GEMINI_API_KEY"),
-        help="API key for the Gemini API. Defaults to the GEMINI_API_KEY environment variable.",
+        metavar="KEY",
+        help="Gemini API key. Defaults to GEMINI_API_KEY env var.",
     )
-    parser.add_argument(
-        "--model", default="gemini-2.5-flash-image", help="The model to use."
+    group.add_argument(
+        "--model",
+        default=DEFAULT_MODEL,
+        metavar="NAME",
+        help=f"Model to use (default: {DEFAULT_MODEL}). "
+             "Pro models support --image-size and --system-prompt. "
+             "Gemini 3 models support --google-search.",
     )
-    parser.add_argument(
+    group.add_argument(
         "--base-url",
         default=os.getenv("GOOGLE_GEMINI_BASE_URL"),
-        help="Alternative Gemini API endpoint for your organization.",
+        metavar="URL",
+        help="Alternative API endpoint (defaults to GOOGLE_GEMINI_BASE_URL env var).",
+    )
+
+
+def add_generation_args(parser: argparse.ArgumentParser, for_icons: bool = False) -> None:
+    """Add generation parameters shared between commands.
+
+    Args:
+        parser: The argument parser to add arguments to.
+        for_icons: If True, uses icon-appropriate defaults (1K size, 1:1 aspect).
+    """
+    group = parser.add_argument_group(
+        "Generation Options",
+        "Control image generation behavior. Some options require Pro or Gemini 3 models."
+    )
+    group.add_argument(
+        "--temperature",
+        type=float,
+        default=1.0,
+        metavar="FLOAT",
+        help="Creativity level 0.0-2.0 (default: 1.0). "
+             "Lower = more deterministic, higher = more varied.",
+    )
+    # image-size: icons default to 1K (smaller, many variants), general defaults to 2K
+    default_size = "1K" if for_icons else "2K"
+    group.add_argument(
+        "--image-size",
+        default=default_size,
+        choices=["1K", "2K", "4K"],
+        help=f"Output resolution (default: {default_size}). [Pro models only]",
+    )
+    group.add_argument(
+        "--system-prompt",
+        default=None,
+        metavar="TEXT",
+        help="Custom system instruction to guide generation style. [Pro models only]",
+    )
+    group.add_argument(
+        "--google-search",
+        action="store_true",
+        help="Enable Google Search grounding for real-time information. [Gemini 3 only]",
     )
 
 
@@ -211,134 +271,133 @@ The icons subcommand handles all platform-specific requirements:
   - macOS: ICNS format with optional drop shadow
   - Android: Adaptive icons with safe zone validation
   - Windows: Multi-size ICO file
-  - PWA: Manifest with regular and maskable icons""",
+  - PWA: Manifest with regular and maskable icons
+
+Model Capabilities:
+  Flash models  - Basic generation, up to 6 input images
+  Pro models    - --image-size, --system-prompt, up to 6 input images
+  Gemini 3      - --google-search, up to 14 input images""",
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
 
-        parser.add_argument(
+        # Input/Output group
+        io_group = parser.add_argument_group(
+            "Input/Output",
+            "Source images and output destination."
+        )
+        io_group.add_argument(
             "prompt",
             nargs="?",
             default=None,
             help="Text description of the icon to generate (e.g., 'a minimalist coffee cup').",
         )
-        parser.add_argument(
+        io_group.add_argument(
             "-i",
             "--input-images",
             nargs="+",
             default=[],
-            help="""Input image(s) for processing or style reference:
-  1 image  → Used as light variant
-  2 images → light + dark variants
-  3 images → light + dark + tinted variants
-  4+ images → All used as style references for generation""",
-        )
-        parser.add_argument(
-            "--light",
-            default=None,
             metavar="FILE",
-            help="Explicit path to light mode icon variant.",
+            help="Input image(s): 1=light, 2=light+dark, 3=all variants, 4+=style refs.",
         )
-        parser.add_argument(
-            "--dark",
-            default=None,
-            metavar="FILE",
-            help="Explicit path to dark mode icon variant.",
-        )
-        parser.add_argument(
-            "--tinted",
-            default=None,
-            metavar="FILE",
-            help="Explicit path to tinted/monochrome variant (for Android themed icons).",
-        )
-        parser.add_argument(
+        io_group.add_argument(
             "-o",
             "--output-dir",
             default="icons",
             metavar="DIR",
-            help="Output directory for generated icons (default: icons/).",
+            help="Output directory (default: icons/).",
         )
 
-        # Icon type (mutually exclusive)
-        icon_type_group = parser.add_mutually_exclusive_group()
-        icon_type_group.add_argument(
+        # Explicit variant files group
+        variant_group = parser.add_argument_group(
+            "Explicit Variants",
+            "Provide pre-made icon variants (overrides --input-images interpretation)."
+        )
+        variant_group.add_argument(
+            "--light",
+            default=None,
+            metavar="FILE",
+            help="Light mode icon variant.",
+        )
+        variant_group.add_argument(
+            "--dark",
+            default=None,
+            metavar="FILE",
+            help="Dark mode icon variant.",
+        )
+        variant_group.add_argument(
+            "--tinted",
+            default=None,
+            metavar="FILE",
+            help="Tinted/monochrome variant (for Android themed icons).",
+        )
+
+        # Icon type group
+        type_group = parser.add_argument_group(
+            "Icon Type",
+            "What kind of icon to generate (mutually exclusive)."
+        )
+        icon_type_mutex = type_group.add_mutually_exclusive_group()
+        icon_type_mutex.add_argument(
             "--app-icon",
             action="store_true",
             default=True,
-            help="Main launcher icon (default). Opaque background enforced.",
+            help="Launcher icon with opaque background (default).",
         )
-        icon_type_group.add_argument(
+        icon_type_mutex.add_argument(
             "--menu-icon",
             action="store_true",
-            help="In-app UI icons. Transparency preserved.",
+            help="In-app UI icon with transparency preserved.",
         )
-        icon_type_group.add_argument(
+        icon_type_mutex.add_argument(
             "--favicon",
             action="store_true",
-            help="Website favicons only (ICO + small PNGs).",
+            help="Website favicon (ICO + small PNGs).",
         )
 
-        # Platform selection
-        parser.add_argument(
+        # Platform selection group
+        platform_group = parser.add_argument_group(
+            "Platform Selection",
+            "Choose target platforms. --platforms overrides --preset."
+        )
+        platform_group.add_argument(
             "--preset",
             default="all",
             choices=["mobile", "desktop", "apple", "all"],
-            help="Platform preset (default: all).",
+            help="Platform preset: mobile=iOS+Android, desktop=macOS+Windows, "
+                 "apple=iOS+macOS, all=everything (default).",
         )
-        parser.add_argument(
+        platform_group.add_argument(
             "--platforms",
             nargs="+",
             choices=["ios", "macos", "android", "windows", "pwa"],
-            help="Specific platforms (overrides --preset).",
+            metavar="PLATFORM",
+            help="Specific platforms to generate for.",
         )
 
-        # Themed variants
-        parser.add_argument(
+        # Icon processing group
+        processing_group = parser.add_argument_group(
+            "Icon Processing",
+            "Post-processing options for platform-specific requirements."
+        )
+        processing_group.add_argument(
             "--themed",
             action="store_true",
-            help="Generate all 3 variants (light+dark+tinted) in single call.",
+            help="Generate all 3 variants (light+dark+tinted) for themed icon support.",
         )
-
-        # Post-processing options
-        parser.add_argument(
+        processing_group.add_argument(
             "--no-shadow",
             action="store_true",
-            help="Skip macOS shadow template.",
+            help="Skip macOS drop shadow effect.",
         )
-        parser.add_argument(
+        processing_group.add_argument(
             "--no-safe-zone-check",
             action="store_true",
-            help="Skip Android safe zone validation.",
+            help="Skip Android adaptive icon safe zone validation.",
         )
 
-        # Generation options (Pro models only for some features)
-        parser.add_argument(
-            "--image-size",
-            default="1K",
-            choices=["1K", "2K", "4K"],
-            help="Generated icon resolution (Pro models only). Default: 1K. Higher = more detail.",
-        )
-        parser.add_argument(
-            "--system-prompt",
-            default=None,
-            metavar="TEXT",
-            help="Custom system prompt to override built-in icon prompts (Pro models only).",
-        )
-        parser.add_argument(
-            "--temperature",
-            type=float,
-            default=1.0,
-            metavar="FLOAT",
-            help="Generation randomness 0.0-2.0 (default: 1.0). Lower = more consistent output.",
-        )
-
-        # Gemini 3 specific options
-        parser.add_argument(
-            "--google-search",
-            action="store_true",
-            help="Enable Google Search grounding (Gemini 3 models only). Useful for current events/brands.",
-        )
-
-        add_common_args(parser)
+        # Shared generation args and API args
+        add_generation_args(parser, for_icons=True)
+        add_api_args(parser)
 
         args = parser.parse_args(sys.argv[2:])
         icons_command(args)
@@ -346,90 +405,127 @@ The icons subcommand handles all platform-specific requirements:
     else:
         # Default generate command (backward compatible)
         parser = argparse.ArgumentParser(
-            description="Generate images using the Gemini API."
+            prog="gemimg",
+            description="""Generate images using the Gemini API.
+
+Examples:
+  gemimg "a sunset over mountains"                    # Basic generation
+  gemimg "oil painting style" -i photo.jpg            # Transform image
+  gemimg "product photo" --aspect-ratio 16:9          # Custom aspect ratio
+  gemimg "logo design" -n 4 --temperature 1.5         # Multiple variations
+  gemimg "diagram" --grid 2x2                         # Generate 4-panel grid
+
+Model Capabilities:
+  Flash models  - Basic generation, up to 6 input images
+  Pro models    - --image-size, --system-prompt, --grid, up to 6 input images
+  Gemini 3      - --google-search, up to 14 input images""",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
         )
 
-        parser.add_argument("prompt", help="The text prompt for image generation.")
-        parser.add_argument(
+        # Input/Output group
+        io_group = parser.add_argument_group(
+            "Input/Output",
+            "Source content and output destination."
+        )
+        io_group.add_argument(
+            "prompt",
+            help="Text description for image generation.",
+        )
+        io_group.add_argument(
             "-i",
             "--input-images",
             nargs="+",
-            help="Optional paths to input images.",
             default=[],
+            metavar="FILE",
+            help="Input images for transformation or style reference.",
         )
-        parser.add_argument(
+        io_group.add_argument(
             "-o",
             "--output-file",
-            help="Optional output filename. Defaults to output.png, output-2.png, etc.",
             default=None,
+            metavar="FILE",
+            help="Output filename (default: output.png, output-2.png, ...).",
         )
-        parser.add_argument(
-            "--aspect-ratio", default="1:1", help="Aspect ratio of the generated image."
+        io_group.add_argument(
+            "--output-dir",
+            default="",
+            metavar="DIR",
+            help="Directory for output files.",
         )
-        parser.add_argument(
-            "--no-resize",
-            action="store_false",
-            dest="resize_inputs",
-            help="Do not resize input images.",
-        )
-        parser.add_argument(
-            "--output-dir", default="", help="Directory to save the generated images."
-        )
-        parser.add_argument(
-            "--temperature", type=float, default=1.0, help="Generation temperature."
-        )
-        parser.add_argument(
-            "--webp", action="store_true", help="Save as WEBP instead of PNG."
-        )
-        parser.add_argument("-n", type=int, default=1, help="Number of images to generate.")
-        parser.add_argument(
-            "--store-prompt",
-            action="store_true",
-            help="Store the prompt in the image metadata.",
-        )
-        parser.add_argument(
-            "--image-size",
-            default="2K",
-            help="Image size for the generation (Pro models only).",
-        )
-        parser.add_argument(
-            "--system-prompt",
-            default=None,
-            help="System prompt for the generation (Pro models only).",
-        )
-        parser.add_argument(
-            "--grid",
-            default=None,
-            help="Grid dimensions as ROWSxCOLS (e.g., 2x2). Pro models only.",
-        )
-        parser.add_argument(
-            "--google-search",
-            action="store_true",
-            help="Enable Google Search grounding for real-time data (Gemini 3 Pro only).",
-        )
-        parser.add_argument(
-            "--grid-aspect-ratio",
-            default="1:1",
-            help="Aspect ratio for grid cells (default: 1:1).",
-        )
-        parser.add_argument(
-            "--grid-image-size",
-            default="2K",
-            help="Image size for grid generation (default: 2K).",
-        )
-        parser.add_argument(
-            "--save-grid-original",
-            action="store_true",
-            help="Save the original grid image before slicing.",
-        )
-        parser.add_argument(
+        io_group.add_argument(
             "-f",
             "--force",
             action="store_true",
-            help="Force overwrite of existing files.",
+            help="Overwrite existing files without prompting.",
         )
 
-        add_common_args(parser)
+        # Image format group
+        format_group = parser.add_argument_group(
+            "Image Format",
+            "Control output image properties."
+        )
+        format_group.add_argument(
+            "--aspect-ratio",
+            default="1:1",
+            metavar="RATIO",
+            help="Output aspect ratio (default: 1:1). Examples: 16:9, 4:3, 3:4.",
+        )
+        format_group.add_argument(
+            "--webp",
+            action="store_true",
+            help="Save as WebP instead of PNG.",
+        )
+        format_group.add_argument(
+            "--no-resize",
+            action="store_false",
+            dest="resize_inputs",
+            help="Don't resize input images (may cause API errors for large images).",
+        )
+        format_group.add_argument(
+            "-n",
+            type=int,
+            default=1,
+            metavar="COUNT",
+            help="Number of images to generate (default: 1).",
+        )
+        format_group.add_argument(
+            "--store-prompt",
+            action="store_true",
+            help="Embed the prompt in output image metadata.",
+        )
+
+        # Grid generation group (Pro only)
+        grid_group = parser.add_argument_group(
+            "Grid Generation [Pro models only]",
+            "Generate multi-panel image grids."
+        )
+        grid_group.add_argument(
+            "--grid",
+            default=None,
+            metavar="RxC",
+            help="Grid dimensions as ROWSxCOLS (e.g., 2x2, 3x3).",
+        )
+        grid_group.add_argument(
+            "--grid-aspect-ratio",
+            default="1:1",
+            metavar="RATIO",
+            help="Aspect ratio for each grid cell (default: 1:1).",
+        )
+        grid_group.add_argument(
+            "--grid-image-size",
+            default="2K",
+            choices=["1K", "2K", "4K"],
+            help="Resolution for grid generation (default: 2K).",
+        )
+        grid_group.add_argument(
+            "--save-grid-original",
+            action="store_true",
+            help="Save the full grid image before slicing into cells.",
+        )
+
+        # Shared generation args and API args
+        add_generation_args(parser, for_icons=False)
+        add_api_args(parser)
 
         args = parser.parse_args()
         generate_command(args)
