@@ -12,3 +12,9 @@ gemimg.egg-info/
 dist/
 build/
 AGENTS.md
+.claude/
+PR_INFO.md
+.cache/
+*.pyc
+test.png
+uv.lock
