@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -160,7 +161,7 @@ class GemImg:
 
         try:
             response_data = response.json()
-        except ValueError as e:
+        except json.JSONDecodeError as e:
             logger.error(f"API returned invalid JSON response: {e}")
             return None
 

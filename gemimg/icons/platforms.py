@@ -167,7 +167,9 @@ class MacOSProcessor(PlatformProcessor):
     def _apply_shadow(self, icon: Image.Image) -> Image.Image:
         """Apply macOS-style drop shadow to icon."""
         try:
-            shadow = Image.open(self.shadow_template).convert("RGBA")
+            # Use context manager for proper file handle cleanup (RAII)
+            with Image.open(self.shadow_template) as shadow_file:
+                shadow = shadow_file.convert("RGBA").copy()
             # Resize shadow to match icon size
             shadow = shadow.resize(icon.size, Image.Resampling.LANCZOS)
 
@@ -178,7 +180,7 @@ class MacOSProcessor(PlatformProcessor):
             # Composite icon over shadow
             shadow.paste(icon, (0, 0), icon)
             return shadow
-        except Exception as e:
+        except (FileNotFoundError, OSError, IOError) as e:
             logger.warning(f"Failed to apply shadow template: {e}")
             return icon
 
@@ -288,31 +290,25 @@ class WindowsProcessor(PlatformProcessor):
         """
         Process source image for Windows.
 
-        Creates a multi-size ICO file.
+        Creates all size variants for ICO file.
+        Returns dict keyed by size string for use by save().
         """
-        # Prepare sizes for ICO
-        ico_images = []
+        results = {}
         for size in WINDOWS_ICO_SIZES:
             resized = source_image.resize(size, Image.Resampling.LANCZOS)
-            ico_images.append(resized)
-
-        # Return the largest size as the main image
-        # The actual ICO saving happens in save()
-        return {"icon.ico": source_image}
+            results[f"{size[0]}x{size[1]}"] = resized
+        return results
 
     def save(self, processed_images: Dict[str, Image.Image]) -> List[Path]:
-        """Save as multi-size ICO file."""
+        """Save as multi-size ICO file using already-processed images."""
         platform_dir = self.output_dir / self.platform.value / self.variant
         platform_dir.mkdir(parents=True, exist_ok=True)
 
-        saved_paths = []
-        source = list(processed_images.values())[0]
-
-        # Create all size variants
-        ico_images = []
-        for size in WINDOWS_ICO_SIZES:
-            resized = source.resize(size, Image.Resampling.LANCZOS)
-            ico_images.append(resized)
+        # Collect images in order matching WINDOWS_ICO_SIZES
+        ico_images = [
+            processed_images[f"{size[0]}x{size[1]}"]
+            for size in WINDOWS_ICO_SIZES
+        ]
 
         # Save as ICO with all sizes
         ico_path = platform_dir / "icon.ico"
@@ -322,10 +318,9 @@ class WindowsProcessor(PlatformProcessor):
             sizes=WINDOWS_ICO_SIZES,
             append_images=ico_images[1:],
         )
-        saved_paths.append(ico_path)
         logger.debug(f"Saved: {ico_path}")
 
-        return saved_paths
+        return [ico_path]
 
 
 class PWAProcessor(PlatformProcessor):

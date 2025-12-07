@@ -115,7 +115,8 @@ def img_to_b64(img: Union[str, Image.Image], resize: bool = True) -> str:
         The base64-encoded string of the image.
     """
     if isinstance(img, str):
-        img = Image.open(img)
+        with Image.open(img) as opened:
+            img = opened.copy()
     if resize:
         img = resize_image(img)
 
@@ -234,13 +235,13 @@ def composite_images(
         raise ValueError("Images list cannot be empty")
 
     # Load all images and ensure they're PIL Image objects
+    # Use context managers for file paths to avoid file handle leaks
     loaded_images: List[Image.Image] = []
     for img in images:
         if isinstance(img, str):
-            # It's a file path
-            loaded_images.append(Image.open(img))
+            with Image.open(img) as opened:
+                loaded_images.append(opened.copy())
         else:
-            # It's already a PIL Image
             loaded_images.append(img)
 
     num_images = len(loaded_images)

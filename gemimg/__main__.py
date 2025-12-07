@@ -7,6 +7,28 @@ from .gemimg import GemImg
 from .grid import Grid
 from .utils import save_image
 
+
+def existing_file(path: str) -> str:
+    """Argparse type validator that ensures file exists."""
+    if not Path(path).exists():
+        raise argparse.ArgumentTypeError(f"File not found: {path}")
+    if not Path(path).is_file():
+        raise argparse.ArgumentTypeError(f"Not a file: {path}")
+    return path
+
+
+def temperature_range(value: str) -> float:
+    """Argparse type validator for temperature (0.0-2.0)."""
+    try:
+        temp = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid temperature: {value}")
+    if not 0.0 <= temp <= 2.0:
+        raise argparse.ArgumentTypeError(
+            f"Temperature must be between 0.0 and 2.0, got {temp}"
+        )
+    return temp
+
 # Model names for help text
 MODELS = {
     "flash": "gemini-2.5-flash-image",
@@ -50,7 +72,7 @@ def add_generation_args(parser: argparse.ArgumentParser, for_icons: bool = False
 
     Args:
         parser: The argument parser to add arguments to.
-        for_icons: If True, uses icon-appropriate defaults (1K size, 1:1 aspect).
+        for_icons: If True, used for icons subcommand context (currently unused).
     """
     group = parser.add_argument_group(
         "Generation Options",
@@ -58,14 +80,14 @@ def add_generation_args(parser: argparse.ArgumentParser, for_icons: bool = False
     )
     group.add_argument(
         "--temperature",
-        type=float,
+        type=temperature_range,
         default=1.0,
         metavar="FLOAT",
         help="Creativity level 0.0-2.0 (default: 1.0). "
              "Lower = more deterministic, higher = more varied.",
     )
-    # image-size: icons default to 1K (smaller, many variants), general defaults to 2K
-    default_size = "1K" if for_icons else "2K"
+    # image-size: both icons and general default to 2K for future-proofing
+    default_size = "2K"
     group.add_argument(
         "--image-size",
         default=default_size,
@@ -295,9 +317,14 @@ Model Capabilities:
             "-i",
             "--input-images",
             nargs="+",
+            type=existing_file,
             default=[],
             metavar="FILE",
-            help="Input image(s): 1=light, 2=light+dark, 3=all variants, 4+=style refs.",
+            help="Input image file(s). Interpretation by count: "
+                 "1 file → light variant; "
+                 "2 files → light, dark; "
+                 "3 files → light, dark, tinted; "
+                 "4+ files → first 3 as variants, rest as style references.",
         )
         io_group.add_argument(
             "-o",
@@ -314,18 +341,21 @@ Model Capabilities:
         )
         variant_group.add_argument(
             "--light",
+            type=existing_file,
             default=None,
             metavar="FILE",
             help="Light mode icon variant.",
         )
         variant_group.add_argument(
             "--dark",
+            type=existing_file,
             default=None,
             metavar="FILE",
             help="Dark mode icon variant.",
         )
         variant_group.add_argument(
             "--tinted",
+            type=existing_file,
             default=None,
             metavar="FILE",
             help="Tinted/monochrome variant (for Android themed icons).",
@@ -435,6 +465,7 @@ Model Capabilities:
             "-i",
             "--input-images",
             nargs="+",
+            type=existing_file,
             default=[],
             metavar="FILE",
             help="Input images for transformation or style reference.",
