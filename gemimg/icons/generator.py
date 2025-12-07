@@ -80,6 +80,7 @@ class IconGenerator:
         icon_type: Optional[IconType] = None,
         themed: Optional[bool] = None,
         output_dir: Optional[Path] = None,
+        google_search: bool = False,
     ) -> IconGenerationResult:
         """
         End-to-end icon generation with flexible input handling.
@@ -89,6 +90,7 @@ class IconGenerator:
         - 1 image: Use as light variant OR as style reference
         - 2-3 images: Interpret as light/dark/tinted (skip generation)
         - 4+ images: Use all as style references for generation
+          (Gemini 3 Pro supports up to 14 input images vs 6 for Flash)
 
         Explicit variant files (--light, --dark, --tinted) take precedence.
 
@@ -101,6 +103,7 @@ class IconGenerator:
             icon_type: Override config icon type
             themed: Override config themed setting
             output_dir: Override config output directory
+            google_search: Enable Google Search grounding (Gemini 3 Pro only)
 
         Returns:
             IconGenerationResult with variants and output paths
@@ -170,6 +173,7 @@ class IconGenerator:
                 aspect_ratio="1:1",
                 image_size="1K",
                 save=False,
+                google_search=google_search,
             )
 
             if result and result.images:
@@ -185,7 +189,8 @@ class IconGenerator:
                     variants.tinted = result.images[idx]
                     idx += 1
 
-                api_calls = 1
+                # Note: GemImg._generate_multiple makes n separate API calls
+                api_calls = n_outputs
             else:
                 raise RuntimeError("Failed to generate icon images")
 

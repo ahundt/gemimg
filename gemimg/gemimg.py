@@ -68,7 +68,7 @@ class GemImg:
 
         # Validate Google Search is only used with Gemini 3
         if google_search and not self.is_gemini3:
-            raise ValueError("Google Search grounding requires Gemini 3 Pro Image")
+            raise ValueError("Google Search grounding requires a Gemini 3 model")
 
         # If grid is provided, use its aspect_ratio and image_size
         if grid is not None:

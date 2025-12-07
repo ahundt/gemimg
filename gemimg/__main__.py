@@ -173,6 +173,7 @@ def icons_command(args: argparse.Namespace) -> None:
             light=Path(args.light) if args.light else None,
             dark=Path(args.dark) if args.dark else None,
             tinted=Path(args.tinted) if args.tinted else None,
+            google_search=args.google_search,
         )
 
         print(f"Generated icons with {result.api_calls} API call(s)")
@@ -281,6 +282,13 @@ def main():
             "--no-safe-zone-check",
             action="store_true",
             help="Skip Android safe zone validation.",
+        )
+
+        # Gemini 3 Pro options
+        parser.add_argument(
+            "--google-search",
+            action="store_true",
+            help="Enable Google Search grounding for real-time data (Gemini 3 Pro only).",
         )
 
         add_common_args(parser)

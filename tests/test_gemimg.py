@@ -156,7 +156,7 @@ class TestGoogleSearchGrounding:
         gem = GemImg(api_key=api_key, model="gemini-2.5-flash-image")
 
         with pytest.raises(
-            ValueError, match=r"Google Search grounding requires Gemini 3"
+            ValueError, match=r"Google Search grounding requires a Gemini 3 model"
         ):
             gem.generate(prompt="test", google_search=True)
 
