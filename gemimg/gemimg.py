@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Union
 
@@ -40,6 +41,28 @@ class GemImg:
     def is_pro(self) -> bool:
         """Check if the model is a pro variant."""
         return "-pro" in self.model
+
+    @property
+    def gemini_version(self) -> Optional[int]:
+        """Extract Gemini major version from model name.
+
+        Returns:
+            Major version number (2, 3, etc.) or None if not detectable.
+
+        Examples:
+            - "gemini-2.5-flash-image" -> 2
+            - "gemini-3-pro-image-preview" -> 3
+            - "gemini-2.0-flash-exp" -> 2
+            - "some-other-model" -> None
+        """
+        match = re.search(r"gemini-(\d+)", self.model)
+        return int(match.group(1)) if match else None
+
+    @property
+    def is_gemini3(self) -> bool:
+        """Check if the model is Gemini 3 or later."""
+        version = self.gemini_version
+        return version is not None and version >= 3
 
     def generate(
         self,
@@ -140,12 +163,14 @@ class GemImg:
             logger.error("No image is present in the response.")
             return None
 
-        response_parts = candidates["content"]["parts"]
+        response_parts = candidates["content"].get("parts", [])
 
+        # Filter out thinking mode interim images (Gemini 3 generates up to 2
+        # "thought" images before the final result; these have thought=True)
         output_images = [
             b64_to_img(part["inlineData"]["data"])
             for part in response_parts
-            if "inlineData" in part
+            if "inlineData" in part and not part.get("thought", False)
         ]
 
         # If grid is provided, slice the generated image(s) into subimages
